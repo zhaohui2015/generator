@@ -1,5 +1,5 @@
 /**
- *    Copyright 2006-2016 the original author or authors.
+ *    Copyright 2006-2017 the original author or authors.
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import java.util.Set;
 import java.util.StringTokenizer;
 
 import org.mybatis.generator.config.Configuration;
+import org.mybatis.generator.config.Context;
+import org.mybatis.generator.config.TableConfiguration;
 import org.mybatis.generator.config.xml.ConfigurationParser;
 import org.mybatis.generator.exception.InvalidConfigurationException;
 import org.mybatis.generator.exception.XMLParserException;
@@ -50,6 +52,8 @@ public class ShellRunner {
     private static final String HELP_1 = "-?"; //$NON-NLS-1$
     private static final String HELP_2 = "-h"; //$NON-NLS-1$
 
+    private static final String PPP = "-pp"; //$NON-NLS-1$
+
     public static void main(String[] args) {
         if (args.length == 0) {
             usage();
@@ -69,6 +73,7 @@ public class ShellRunner {
             writeLine(getString("RuntimeError.0")); //$NON-NLS-1$
             return;
         }
+
 
         List<String> warnings = new ArrayList<String>();
 
@@ -105,6 +110,10 @@ public class ShellRunner {
         try {
             ConfigurationParser cp = new ConfigurationParser(warnings);
             Configuration config = cp.parseConfiguration(configurationFile);
+
+            //使用自定义参数处理
+
+            replaceConfig(config,arguments);
 
             DefaultShellCallback shellCallback = new DefaultShellCallback(
                     arguments.containsKey(OVERWRITE));
@@ -161,6 +170,119 @@ public class ShellRunner {
         }
     }
 
+    private  static Configuration replaceConfig(Configuration config,Map<String, String> arguments){
+        System.out.print("开始处理自定义参数");
+        if (arguments.containsKey(PPP)){
+            HashMap<String,String> m = new HashMap<String,String> ();
+
+            StringTokenizer st = new StringTokenizer(arguments.get(PPP), ","); //$NON-NLS-1$
+            while (st.hasMoreTokens()) {
+                String s = st.nextToken().trim();
+                if (s.length() > 0) {
+                    String[] sa =  s.split(":");
+                    if(sa[0].equals("table")){//表名
+                        m.put("table",sa[1]);
+                    }
+                    if(sa[0].equals("package")) {//包名
+                        m.put("package", sa[1]);
+                    }
+                    if(sa[0].equals("domainObjectName")) {//包名
+                        m.put("domainObjectName", sa[1]);
+                    }
+                }
+            }
+
+            if(m.get("domainObjectName")==null||"".equals(m.get("domainObjectName"))){
+                m.put("domainObjectName", captureName(camelName((String)m.get("table"))));
+            }
+
+            for(Context con :config.getContexts()){
+                con.getJavaClientGeneratorConfiguration().setTargetPackage(m.get("package")+".dao");
+                con.getSqlMapGeneratorConfiguration().setTargetPackage(m.get("package")+".dao");
+                con.getJavaModelGeneratorConfiguration().setTargetPackage(m.get("package")+".model");
+                for(TableConfiguration tc:con.getTableConfigurations()){
+                    tc.setTableName(m.get("table"));
+                    tc.setDomainObjectName(m.get("domainObjectName"));
+
+                }
+
+            }
+            return config;
+
+        }else{
+            return config;
+        }
+
+
+    }
+
+    public static String captureName(String name) {
+        name = name.substring(0, 1).toUpperCase() + name.substring(1);
+        return  name;
+
+    }
+
+    /**
+     * 将驼峰式命名的字符串转换为下划线大写方式。如果转换前的驼峰式命名的字符串为空，则返回空字符串。</br>
+     * 例如：HelloWorld->HELLO_WORLD
+     * @param name 转换前的驼峰式命名的字符串
+     * @return 转换后下划线大写方式命名的字符串
+     */
+    public static String underscoreName(String name) {
+        StringBuilder result = new StringBuilder();
+        if (name != null && name.length() > 0) {
+            // 将第一个字符处理成大写
+            result.append(name.substring(0, 1).toUpperCase());
+            // 循环处理其余字符
+            for (int i = 1; i < name.length(); i++) {
+                String s = name.substring(i, i + 1);
+                // 在大写字母前添加下划线
+                if (s.equals(s.toUpperCase()) && !Character.isDigit(s.charAt(0))) {
+                    result.append("_");
+                }
+                // 其他字符直接转成大写
+                result.append(s.toUpperCase());
+            }
+        }
+        return result.toString();
+    }
+
+    /**
+     * 将下划线大写方式命名的字符串转换为驼峰式。如果转换前的下划线大写方式命名的字符串为空，则返回空字符串。</br>
+     * 例如：HELLO_WORLD->HelloWorld
+     * @param name 转换前的下划线大写方式命名的字符串
+     * @return 转换后的驼峰式命名的字符串
+     */
+    public static String camelName(String name) {
+        StringBuilder result = new StringBuilder();
+        // 快速检查
+        if (name == null || name.isEmpty()) {
+            // 没必要转换
+            return "";
+        } else if (!name.contains("_")) {
+            // 不含下划线，仅将首字母小写
+            return name.substring(0, 1).toLowerCase() + name.substring(1);
+        }
+        // 用下划线将原始字符串分割
+        String camels[] = name.split("_");
+        for (String camel :  camels) {
+            // 跳过原始字符串中开头、结尾的下换线或双重下划线
+            if (camel.isEmpty()) {
+                continue;
+            }
+            // 处理真正的驼峰片段
+            if (result.length() == 0) {
+                // 第一个驼峰片段，全部字母都小写
+                result.append(camel.toLowerCase());
+            } else {
+                // 其他的驼峰片段，首字母大写
+                result.append(camel.substring(0, 1).toUpperCase());
+                result.append(camel.substring(1).toLowerCase());
+            }
+        }
+        return result.toString();
+    }
+
     private static void writeLine(String message) {
         System.out.println(message);
     }
@@ -207,6 +329,13 @@ public class ShellRunner {
                     arguments.put(TABLES, args[i + 1]);
                 } else {
                     errors.add(getString("RuntimeError.19", TABLES)); //$NON-NLS-1$
+                }
+                i++;
+            }else if (PPP.equalsIgnoreCase(args[i])) {
+                if ((i + 1) < args.length) {
+                    arguments.put(PPP, args[i + 1]);
+                } else {
+                    errors.add(getString("RuntimeError.19", PPP)); //$NON-NLS-1$
                 }
                 i++;
             } else {
